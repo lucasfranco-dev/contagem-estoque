@@ -105,6 +105,20 @@
   label { display: block; margin-bottom: 12px; font-size: 14px; font-weight: 600; }
   label input { display: block; width: 100%; margin-top: 4px; min-height: 48px; padding: 10px 12px; border: 1px solid var(--linha); border-radius: 10px; font-size: 17px; font-weight: 400; }
   .campo-busca { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid var(--linha); border-radius: 10px; font-size: 17px; }
+  .rotulo-campo { display: block; margin-bottom: 4px; font-size: 14px; font-weight: 600; }
+
+  /* Escolha de cor no cadastro manual: sempre número + nome */
+  .lista-cores { max-height: 240px; overflow: auto; margin-top: 8px; border: 1px solid var(--linha); border-radius: 10px; }
+  .opcao-cor { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 8px 12px; border: 0; border-bottom: 1px solid var(--linha); background: none; text-align: left; font-weight: 600; }
+  .opcao-cor:last-child { border-bottom: 0; }
+  .cor-escolhida { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 8px 12px; border: 1px solid var(--marca); border-radius: 10px; background: var(--marca-claro); }
+  .cor-escolhida strong { flex: 1; min-width: 0; }
+
+  /* Confirmação de cada leitura */
+  .popup-leitura { text-align: center; }
+  .popup-check { color: var(--marca); font-size: 20px; font-weight: 800; }
+  .popup-tam { margin: 6px 0; color: var(--marca); font-size: 46px; font-weight: 800; line-height: 1.1; }
+  .popup-leitura .linha-botoes .botao { min-height: 56px; font-size: 18px; }
 
   .aviso { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 40; width: max-content; max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 12px; background: #1b1f24; color: #fff; font-size: 15px; box-shadow: 0 4px 16px rgba(0, 0, 0, .25); }
   .aviso.erro { background: var(--perigo); color: #fff; }
@@ -120,7 +134,6 @@
 <body>
 <main id="app"><p class="sutil centro">Carregando…</p></main>
 <dialog id="dialogo"></dialog>
-<datalist id="lista-cores"></datalist>
 
 <script>
 // Contagem de Estoque — página publicada em https://lucasfranco-dev.github.io/contagem-estoque/
@@ -487,6 +500,7 @@ function enterNaBusca() {
     estado.elBusca.value = '';
     estado.busca = '';
     desenharLista();
+    leitor.veioDaBusca = true;
     lerCodigo(texto);
   } else if (/^TF[A-Z]?\d{4,}$/i.test(texto) && editavel()) {
     abrirBuscaTf(texto);
@@ -664,13 +678,18 @@ function desligarCamera() {
 async function lerQuadro() {
   if (!leitor.ativo) return;
   try {
-    if (!dialogo.open && leitor.video.readyState >= 2) {
-      const codigos = await leitor.detector.detect(leitor.video);
-      if (codigos.length === 1) receberCodigoDaCamera(codigos[0].rawValue, Date.now());
-      else if (codigos.length > 1) mostrarLeitura('Mais de uma etiqueta na câmera. Mire em uma só.', 'erro');
-    }
+    if (dialogo.open) processarQuadro(null, Date.now());
+    else if (leitor.video.readyState >= 2) processarQuadro(await leitor.detector.detect(leitor.video), Date.now());
   } catch (e) { /* quadro ruim: tenta o próximo */ }
   setTimeout(lerQuadro, 120);
+}
+
+// codigos = null: há uma janela aberta (ex.: confirmação). Nada é lido, e a proteção contra contar de novo
+// é renovada a cada quadro, para a etiqueta que ficou na frente da câmera não contar outra vez ao fechar.
+function processarQuadro(codigos, agora) {
+  if (!codigos) { leitor.ultimoVisto = agora; return; }
+  if (codigos.length === 1) receberCodigoDaCamera(codigos[0].rawValue, agora);
+  else if (codigos.length > 1) mostrarLeitura('Mais de uma etiqueta na câmera. Mire em uma só.', 'erro');
 }
 
 // Proteção contra contar duas vezes: o mesmo código só conta de novo depois de sumir da câmera.
@@ -679,6 +698,7 @@ function receberCodigoDaCamera(codigo, agora) {
   leitor.ultimoVisto = agora;
   if (mesmo) return;
   leitor.ultimoCodigo = codigo;
+  leitor.veioDaBusca = false;
   lerCodigo(codigo);
 }
 
@@ -747,7 +767,48 @@ function contarLeitura(id, tamanho) {
   destacar(id);
   sinal('ok');
   const n = (estado.qtd[id] || {})[tamanho] || 0;
-  mostrarLeitura(p.tf + ' · ' + p.corNome + ' · ' + tamanho + ' → ' + n, 'ok', () => tocar(id, tamanho, -1));
+  const texto = p.tf + ' · ' + p.corNome + ' · ' + tamanho + ' → ' + n;
+  mostrarLeitura(texto, 'ok', () => tocar(id, tamanho, -1));
+  confirmarLeitura(p, tamanho, n);
+}
+
+// Popup a cada leitura: o vendedor vê o que foi bipado e confirma (OK) ou desfaz.
+// Com o popup aberto a câmera não lê; ao fechar, a etiqueta que continua na câmera não conta de novo.
+function confirmarLeitura(p, tamanho, n) {
+  const leituraAtual = estado.ultimaLeitura;
+  const ok = el('button', { type: 'button', class: 'botao primario', onclick: fecharDialogo }, 'OK');
+  dialogo.addEventListener('close', () => { if (leitor.veioDaBusca && estado.elBusca) estado.elBusca.focus(); }, { once: true });
+  // Leitor Bluetooth com o popup aberto: o próximo código "digitado" confirma este e já é lido.
+  let digitos = '';
+  const teclas = e => {
+    if (/^\d$/.test(e.key)) {
+      digitos += e.key;
+      e.preventDefault();
+    } else if (e.key === 'Enter' && digitos.length >= 8) {
+      e.preventDefault();
+      const codigo = digitos;
+      digitos = '';
+      fecharDialogo();
+      leitor.veioDaBusca = true;
+      lerCodigo(codigo);
+    }
+  };
+  abrirDialogo(el('div', { class: 'popup-leitura', role: 'alertdialog', 'aria-label': 'Produto bipado', onkeydown: teclas },
+    el('div', { class: 'popup-check' }, '✓ Bipado'),
+    el('div', { class: 'popup-tam', 'aria-label': 'Tamanho ' + tamanho }, tamanho),
+    el('p', { style: 'margin:0 0 4px' }, el('strong', {}, p.tf + ' · ' + p.nome)),
+    el('p', { style: 'margin:0 0 8px' }, bolinha(p.hex), p.corCodigo + ' · ' + p.corNome),
+    el('p', { class: 'sutil' }, 'Agora: ' + n + (n === 1 ? ' peça' : ' peças') + ' neste tamanho'),
+    el('div', { class: 'linha-botoes' },
+      el('button', {
+        type: 'button', class: 'botao', onclick: () => {
+          if (leituraAtual && leituraAtual.desfazer) { const d = leituraAtual.desfazer; leituraAtual.desfazer = null; d(); }
+          mostrarLeitura('Leitura desfeita: ' + p.tf + ' · ' + p.corNome + ' · ' + tamanho, '');
+          fecharDialogo();
+        },
+      }, 'Desfazer'),
+      ok)));
+  ok.focus();
 }
 
 // O site não conhece o código: o vendedor diz uma vez de qual produto e tamanho ele é.
@@ -859,22 +920,60 @@ function formProduto(p, texto, opcoes) {
   const campo = (nome, valor, extra) => el('input', Object.assign({ name: nome, value: valor || '', required: true, maxlength: 60, autocomplete: 'off' }, extra));
   const tf = campo('tf', p ? p.tf : texto, { autocapitalize: 'characters', placeholder: 'Ex.: TF041024' });
   const nome = campo('nome', p ? p.nome : (mesmoTf ? mesmoTf.nome : ''), { autocapitalize: 'words' });
-  const corCodigo = campo('corCodigo', p ? p.corCodigo : '', { autocapitalize: 'characters', list: 'lista-cores', placeholder: 'Ex.: 0004' });
-  const corNome = campo('corNome', '', { autocapitalize: 'words', required: false });
-  const rotuloCorNome = el('label', { hidden: true }, 'Nome da cor nova', corNome);
-  const infoCor = el('p', { class: 'sutil', style: 'margin:-6px 0 12px' });
-  document.getElementById('lista-cores').replaceChildren(...estado.cores.map(c => el('option', { value: c.codigo }, c.nome)));
-
-  // Cor: código cadastrado usa a cor cadastrada; código novo pede o nome e vira uma cor nova.
-  const conferirCor = () => {
-    const codigo = corCodigo.value.trim().toUpperCase();
-    const cor = estado.cores.find(c => c.codigo === codigo);
-    infoCor.replaceChildren(...(cor ? [bolinha(cor.hex), '✓ ' + cor.nome] : codigo ? ['Cor nova: informe o nome abaixo.'] : ['Escolha uma cor cadastrada ou digite o código de uma nova.']));
-    rotuloCorNome.hidden = !!cor || !codigo;
-    corNome.required = !cor && !!codigo;
+  // Cor: escolhida da lista de cores cadastradas (sempre número + nome). Cor nova só pelo botão
+  // "Não encontrei a cor, cadastrar", para ninguém criar uma cor repetida sem querer.
+  let corEscolhida = p ? (estado.cores.find(c => c.codigo === p.corCodigo) || { codigo: p.corCodigo, nome: p.corNome, hex: p.hex }) : null;
+  let corNova = false;
+  const areaCor = el('div');
+  const buscaCor = el('input', { class: 'campo-busca', type: 'search', placeholder: 'Buscar pelo número ou nome da cor', autocomplete: 'off', 'aria-label': 'Buscar cor' });
+  const listaCores = el('div', { class: 'lista-cores', role: 'list' });
+  const novaCodigo = campo('novaCodigo', '', { required: false, autocapitalize: 'characters', inputmode: 'numeric', placeholder: 'Ex.: 3010' });
+  const novaNome = campo('novaNome', '', { required: false, autocapitalize: 'words', placeholder: 'Ex.: Verde Musgo' });
+  const avisoNova = el('div', { class: 'sutil', style: 'margin:-6px 0 12px' });
+  const escolherCor = c => { corEscolhida = c; corNova = false; desenharCor(); };
+  const desenharListaCores = () => {
+    const termos = termosDe(buscaCor.value);
+    const cores = estado.cores.filter(c => termos.every(t => semAcento(c.codigo + ' ' + c.nome).includes(t)));
+    listaCores.replaceChildren(...(cores.length
+      ? cores.map(c => el('button', { type: 'button', class: 'opcao-cor', role: 'listitem', onclick: () => escolherCor(c) }, bolinha(c.hex), c.codigo + ' · ' + c.nome))
+      : [el('p', { class: 'sutil', style: 'padding:0 12px' }, 'Nenhuma cor cadastrada com "' + buscaCor.value.trim() + '".')]));
   };
-  corCodigo.addEventListener('input', conferirCor);
-  conferirCor();
+  const conferirNova = () => {
+    const existente = estado.cores.find(c => c.codigo === novaCodigo.value.trim().toUpperCase());
+    avisoNova.replaceChildren(...(existente ? [
+      'Essa cor já está cadastrada: ', bolinha(existente.hex), existente.codigo + ' · ' + existente.nome + '. ',
+      el('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => escolherCor(existente) }, 'Usar essa cor'),
+    ] : []));
+  };
+  const desenharCor = () => {
+    novaCodigo.required = novaNome.required = corNova;
+    if (corNova) {
+      areaCor.replaceChildren(
+        el('label', {}, 'Número da cor nova', novaCodigo), avisoNova,
+        el('label', {}, 'Nome da cor nova', novaNome),
+        el('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => { corNova = false; desenharCor(); } }, '← Voltar para a lista de cores'));
+    } else if (corEscolhida) {
+      areaCor.replaceChildren(el('div', { class: 'cor-escolhida' },
+        bolinha(corEscolhida.hex), el('strong', {}, corEscolhida.codigo + ' · ' + corEscolhida.nome),
+        el('button', { type: 'button', class: 'link', onclick: () => { corEscolhida = null; desenharCor(); buscaCor.focus(); } }, 'Trocar')));
+    } else {
+      desenharListaCores();
+      areaCor.replaceChildren(buscaCor, listaCores, el('button', {
+        type: 'button', class: 'botao novo', onclick: () => {
+          const digitado = buscaCor.value.trim();
+          novaCodigo.value = /^\d+$/.test(digitado) ? digitado : '';
+          novaNome.value = /^\d+$/.test(digitado) ? '' : digitado;
+          corNova = true;
+          desenharCor();
+          conferirNova();
+          (novaCodigo.value ? novaNome : novaCodigo).focus();
+        },
+      }, 'Não encontrei a cor, cadastrar'));
+    }
+  };
+  buscaCor.addEventListener('input', desenharListaCores);
+  novaCodigo.addEventListener('input', conferirNova);
+  desenharCor();
   tf.addEventListener('change', () => {
     const igual = estado.produtos.find(x => x.tf === tf.value.trim().toUpperCase());
     if (igual && !nome.value.trim()) nome.value = igual.nome;
@@ -895,10 +994,14 @@ function formProduto(p, texto, opcoes) {
     e.preventDefault();
     erro.textContent = '';
     const tamanhos = [...marcados].concat(outros.value.split(',')).map(t => t.trim().toUpperCase()).filter(Boolean);
+    if (!corNova && !corEscolhida) { erro.textContent = 'Escolha a cor na lista (ou toque em "Não encontrei a cor, cadastrar").'; return; }
     if (!tamanhos.length) { erro.textContent = 'Marque pelo menos um tamanho.'; return; }
     salvarBtn.disabled = true;
     try {
-      const dados = { id: p ? p.id : '', tf: tf.value, nome: nome.value, corCodigo: corCodigo.value, corNome: corNome.value, tamanhos };
+      const dados = {
+        id: p ? p.id : '', tf: tf.value, nome: nome.value, tamanhos,
+        corCodigo: corNova ? novaCodigo.value : corEscolhida.codigo, corNome: corNova ? novaNome.value : '',
+      };
       const r = await aguardar('Salvando produto…', () => api('salvarProduto', dados, estado.eu.nome));
       if (r.existente && editando) {
         erro.textContent = 'Já existe outro produto com esse TF e cor: ' + r.existente.nome + ' (' + r.existente.corNome + ').';
@@ -926,14 +1029,12 @@ function formProduto(p, texto, opcoes) {
     !editando && el('p', { class: 'sutil' }, opcoes.ean ? 'Produto do código ' + opcoes.ean + '.' : 'Use só para produtos que não estão no site da TF.'),
     el('label', {}, 'TF', tf),
     el('label', {}, 'Nome do produto', nome),
-    el('label', {}, 'Cor (código)', corCodigo),
-    infoCor,
-    rotuloCorNome,
-    el('div', { style: 'margin-bottom:12px' }, el('span', { style: 'font-size:14px;font-weight:600' }, 'Tamanhos'), chips),
+    el('div', { style: 'margin-bottom:12px' }, el('span', { class: 'rotulo-campo' }, 'Cor'), areaCor),
+    el('div', { style: 'margin-bottom:12px' }, el('span', { class: 'rotulo-campo' }, 'Tamanhos'), chips),
     el('label', {}, 'Outros tamanhos (separe por vírgula)', outros),
     erro,
     el('div', { class: 'linha-botoes' }, botaoCancelar(), salvarBtn)));
-  (tf.value ? (nome.value ? corCodigo : nome) : tf).focus();
+  (tf.value ? (nome.value ? (corEscolhida ? nome : buscaCor) : nome) : tf).focus();
 }
 
 // ===== Salvamento: toque muda na hora, servidor recebe em lote =====

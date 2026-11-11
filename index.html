@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1f6f5c">
+<title>Contagem de Estoque</title>
+<style>
+  :root {
+    --fundo: #f3f4f6; --cartao: #ffffff; --texto: #1b1f24; --suave: #5f6b7a; --linha: #d9dee5;
+    --marca: #1f6f5c; --marca-claro: #e2f2ec; --perigo: #b3261e; --perigo-claro: #fbe9e7; --vazio: #b7bec8; --raio: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--fundo); color: var(--texto); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; touch-action: manipulation; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--marca); outline-offset: 2px; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px 16px 80px; }
+  h1 { font-size: 22px; margin: 8px 0 16px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--suave); margin: 22px 0 8px; }
+  h3 { margin: 0 0 16px; font-size: 19px; }
+  .sutil { color: var(--suave); font-size: 14px; }
+  .centro { text-align: center; padding: 32px 8px; }
+  .erro { color: var(--perigo); font-weight: 600; }
+  .erro:empty { display: none; }
+
+  .botao { display: block; width: 100%; min-height: 48px; padding: 12px 16px; border: 1px solid var(--linha); border-radius: var(--raio); background: var(--cartao); text-align: left; font-weight: 600; }
+  .botao + .botao { margin-top: 8px; }
+  .botao.grande { min-height: 60px; font-size: 19px; }
+  .primario { background: var(--marca); border-color: var(--marca); color: #fff; text-align: center; }
+  .link { min-height: 44px; padding: 0 8px; border: 0; background: none; color: var(--marca); font-weight: 600; }
+  .link.perigo { color: var(--perigo); padding: 0; margin-top: 8px; }
+  .linha-botoes { display: flex; gap: 8px; margin-top: 12px; }
+  .linha-botoes .botao { margin: 0; text-align: center; }
+  .linha-links { display: flex; gap: 20px; flex-wrap: wrap; }
+
+  .item-lista { background: var(--cartao); border: 1px solid var(--linha); border-radius: var(--raio); padding: 14px; margin-bottom: 10px; }
+  .etiqueta { flex: none; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; background: var(--marca-claro); color: var(--marca); }
+  .etiqueta.encerrada { background: #e8eaee; color: var(--suave); }
+
+  /* Cabeçalho fixo das telas de contagem e painel */
+  .topo { position: sticky; top: 0; z-index: 5; background: var(--fundo); margin: -16px -16px 12px; padding: 8px 16px 12px; border-bottom: 1px solid var(--linha); }
+  .topo-linha { display: flex; align-items: center; gap: 8px; }
+  .topo-titulo { flex: 1; min-width: 0; margin: 0; }
+  .topo-titulo strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .voltar { flex: none; width: 44px; height: 44px; border: 0; background: none; font-size: 24px; }
+  .status { flex: none; font-size: 13px; color: var(--suave); }
+  .status.erro { color: var(--perigo); }
+  .busca { display: flex; gap: 8px; margin-top: 8px; }
+  .busca input { flex: 1; min-width: 0; min-height: 48px; padding: 10px 14px; border: 1px solid var(--linha); border-radius: var(--raio); background: var(--cartao); font-size: 17px; }
+  .busca button { flex: none; width: 48px; border: 0; border-radius: var(--raio); background: var(--marca); color: #fff; font-size: 26px; line-height: 1; }
+
+  /* Leitor de código de barras */
+  .ler { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 52px; margin-top: 8px; border: 0; border-radius: var(--raio); background: var(--marca); color: #fff; font-size: 17px; font-weight: 700; }
+  .ler.ativo { background: #3a4350; }
+  .camera { position: relative; margin-top: 8px; border-radius: var(--raio); overflow: hidden; background: #000; height: 170px; }
+  .camera video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .camera .mira { position: absolute; left: 10%; right: 10%; top: 50%; height: 2px; background: #ff3b30; box-shadow: 0 0 6px #ff3b30; }
+  .camera .dica { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; color: #fff; font-size: 13px; text-shadow: 0 1px 3px #000; }
+  .leitura { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 12px; border-radius: 10px; background: var(--cartao); border: 1px solid var(--linha); font-weight: 600; }
+  .leitura.ok { background: var(--marca-claro); border-color: var(--marca); color: var(--marca); }
+  .leitura.erro { background: var(--perigo-claro); border-color: var(--perigo); color: var(--perigo); }
+  .leitura-texto { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+  /* Card de produto (TF) com uma linha de tamanhos por cor */
+  .card { background: var(--cartao); border: 1px solid var(--linha); border-radius: var(--raio); padding: 12px; margin-bottom: 10px; }
+  .card-topo { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; width: 100%; text-align: left; }
+  .card-nome { flex: 1; min-width: 0; }
+  .card-nome strong { display: block; overflow-wrap: anywhere; }
+  .total { flex: none; font-size: 20px; font-weight: 700; min-width: 28px; text-align: right; }
+  .editar { flex: none; width: 40px; height: 40px; border: 1px solid var(--linha); border-radius: 10px; background: none; font-size: 17px; }
+  .tamanhos { display: grid; grid-template-columns: repeat(var(--colunas, 6), 1fr); gap: 6px; }
+  .tam { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .cel { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 58px; padding: 4px 0; border: 1px solid var(--linha); border-radius: 10px; background: #fafbfc; }
+  .cel .rotulo { font-size: 12px; font-weight: 700; color: var(--suave); }
+  .cel .n { font-size: 21px; font-weight: 700; color: var(--vazio); }
+  .cel.tem { background: var(--marca-claro); border-color: var(--marca); }
+  .cel.tem .n { color: var(--marca); }
+  button.cel:active { transform: scale(.94); }
+  .menos { min-height: 34px; border: 1px solid var(--linha); border-radius: 8px; background: none; color: var(--suave); font-size: 20px; line-height: 1; }
+  .menos:disabled { opacity: .3; }
+  .pequenos .cel { min-height: 44px; }
+  .pequenos .cel .n { font-size: 16px; }
+  .cor-linha { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--linha); }
+  .cor-linha.destaque { animation: destaque-cor 1.6s ease-out; }
+  @keyframes destaque-cor { from { background: var(--marca-claro); } to { background: transparent; } }
+  .cor-topo { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; min-height: 40px; }
+  .cor-topo.botao-limpo { width: 100%; text-align: left; }
+  .nome-cor { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .total-cor { flex: none; font-weight: 700; min-width: 24px; text-align: right; }
+  .bolinha { display: inline-block; flex: none; width: 14px; height: 14px; margin-right: 6px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, .25); vertical-align: -2px; }
+  .mais-cor { flex: none; min-height: 40px; padding: 0 12px; border: 1px dashed var(--marca); border-radius: 10px; background: none; color: var(--marca); font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { min-height: 44px; padding: 6px 14px; border: 1px solid var(--marca); border-radius: 999px; background: var(--cartao); color: var(--marca); font-weight: 600; font-size: 14px; }
+  .chip[aria-pressed="true"] { background: var(--marca); color: #fff; }
+  .novo { border-style: dashed; color: var(--marca); text-align: center; margin-top: 12px; }
+  .resumo { border-color: var(--marca); }
+  .botao-limpo { border: 0; background: none; padding: 0; }
+  .detalhe { margin-top: 10px; border-top: 1px solid var(--linha); padding-top: 8px; }
+  .detalhe > div { margin-top: 8px; }
+  .linha-vendedor { min-height: 48px; border-bottom: 1px solid var(--linha); }
+
+  dialog { width: min(100% - 24px, 480px); max-height: calc(100% - 24px); overflow: auto; border: 0; border-radius: 16px; padding: 20px; color: var(--texto); }
+  dialog::backdrop { background: rgba(0, 0, 0, .45); }
+  label { display: block; margin-bottom: 12px; font-size: 14px; font-weight: 600; }
+  label input { display: block; width: 100%; margin-top: 4px; min-height: 48px; padding: 10px 12px; border: 1px solid var(--linha); border-radius: 10px; font-size: 17px; font-weight: 400; }
+  .campo-busca { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid var(--linha); border-radius: 10px; font-size: 17px; }
+
+  .aviso { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 40; width: max-content; max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 12px; background: #1b1f24; color: #fff; font-size: 15px; box-shadow: 0 4px 16px rgba(0, 0, 0, .25); }
+  .aviso.erro { background: var(--perigo); color: #fff; }
+
+  /* Carregando: cobre a tela enquanto a planilha grava, para ninguém tocar duas vezes */
+  .ocupado { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; background: rgba(243, 244, 246, .85); font-weight: 600; }
+  .girando { width: 36px; height: 36px; border: 4px solid var(--marca-claro); border-top-color: var(--marca); border-radius: 50%; animation: girar .8s linear infinite; }
+  @keyframes girar { to { transform: rotate(360deg); } }
+  .carregando { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  @media (prefers-reduced-motion: reduce) { .girando { animation-duration: 2.4s; } .cor-linha.destaque { animation: none; } }
+</style>
+</head>
+<body>
+<main id="app"><p class="sutil centro">Carregando…</p></main>
+<dialog id="dialogo"></dialog>
+<datalist id="lista-cores"></datalist>
+
+<script>
+// Contagem de Estoque — página publicada em https://lucasfranco-dev.github.io/contagem-estoque/
+// Fala com o Apps Script (contagem/Code.gs) pela API abaixo. Documentação: docs/contagem.md.
+const API_URL = 'https://script.google.com/macros/s/AKfycbyk1Cd2MGO0bBHz5fiZoHqo4zAz-d8eIQ-SdYj4AfBWm-HLQ6veTTYMAaVLAsJYxePZAA/exec';
+// Leitor de código de barras para navegadores sem BarcodeDetector nativo (iPhone). Baseado no ZXing.
+const LIB_LEITOR = 'https://cdn.jsdelivr.net/npm/barcode-detector@3.2.3/pure/+esm';
+const FORMATOS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'];
+const TAMANHOS_COMUNS = ['PP', 'P', 'M', 'G', 'GG', '3G', 'UNICO'];
+const ORDEM_TAMANHOS = ['PP', 'P', 'M', 'G', 'GG', '3G', '4G', 'UNICO'];
+const PAUSA_MESMO_CODIGO = 1200; // ms que um código precisa sumir da câmera para contar de novo
+// Erros do servidor que não adianta repetir (o resto é tratado como falha de conexão).
+const ERRO_PERMANENTE = /encerrada|não encontrad|inativo|inválido|Só a gerente/i;
+
+const app = document.getElementById('app');
+const dialogo = document.getElementById('dialogo');
+const estado = {
+  vendedores: [], contagens: [], eu: null,
+  contagem: null, produtos: [], cores: [], eans: {}, qtd: {}, ordem: [], busca: '',
+  pendentes: {}, enviando: false, falhas: 0, timer: null,
+  buscandoEan: {}, ultimaLeitura: null,
+  elLista: null, elBusca: null, elStatus: null, elLeitura: null, elLer: null, elCamera: null,
+};
+
+// ===== Utilidades =====
+
+// Cria elementos sem innerHTML: todo texto vindo da planilha ou do site entra como texto puro.
+function el(tag, props, ...filhos) {
+  const n = document.createElement(tag);
+  Object.entries(props || {}).forEach(([k, v]) => {
+    if (v == null || v === false) return;
+    if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else if (k === 'class') n.className = v;
+    else n.setAttribute(k, v === true ? '' : v);
+  });
+  filhos.flat(Infinity).forEach(f => { if (f != null && f !== false) n.append(f instanceof Node ? f : String(f)); });
+  return n;
+}
+
+// Chama uma ação do Apps Script. text/plain evita o preflight de CORS, que o Apps Script não responde.
+async function api(acao, ...args) {
+  let resposta;
+  try {
+    const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao, args }) });
+    resposta = await r.json();
+  } catch (e) {
+    throw new Error('Sem conexão com a planilha. Confira a internet e tente de novo.');
+  }
+  if (!resposta.ok) throw new Error(resposta.erro || 'Erro desconhecido.');
+  return resposta.resultado;
+}
+
+function lembrar(chave, valor) {
+  try { valor == null ? localStorage.removeItem(chave) : localStorage.setItem(chave, valor); } catch (e) {}
+}
+function lembrado(chave) {
+  try { return localStorage.getItem(chave); } catch (e) { return null; }
+}
+
+function esperar(ms) { return new Promise(ok => setTimeout(ok, ms)); }
+function semAcento(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
+function termosDe(busca) { return semAcento(busca).split(/\s+/).filter(Boolean); }
+function bate(p, termos) {
+  const texto = semAcento([p.tf, p.nome, p.corCodigo, p.corNome].join(' '));
+  return termos.every(t => texto.includes(t));
+}
+function data(iso) {
+  return iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+}
+function soma(porTamanho) { return Object.values(porTamanho || {}).reduce((s, n) => s + (n || 0), 0); }
+function produto(id) { return estado.produtos.find(p => p.id === id); }
+function ordenarTamanhos(lista) {
+  const posicao = t => { const i = ORDEM_TAMANHOS.indexOf(t); return i < 0 ? ORDEM_TAMANHOS.length : i; };
+  return [...new Set(lista)].sort((a, b) => posicao(a) - posicao(b) || a.localeCompare(b, 'pt-BR', { numeric: true }));
+}
+// Tamanhos que aparecem para um produto: os dele + qualquer um que já tenha contagem.
+function tamanhosDe(p, porTamanho) {
+  return ordenarTamanhos((p.tamanhos || []).concat(Object.keys(porTamanho || {}).filter(t => porTamanho[t] > 0)));
+}
+function grade(tamanhos, conteudo, extra) {
+  return el('div', { class: 'tamanhos' + (extra ? ' ' + extra : ''), style: '--colunas:' + Math.min(Math.max(tamanhos.length, 1), 6) }, conteudo);
+}
+function bolinha(hex) { return hex ? el('span', { class: 'bolinha', style: 'background:' + hex, 'aria-hidden': 'true' }) : null; }
+
+// Troca a tela inteira. Aceita listas e ignora false/null (ex.: "gerente && botão").
+function mostrar(...filhos) {
+  app.replaceChildren(...filhos.flat(Infinity).filter(f => f != null && f !== false));
+}
+function carregando() { mostrar(el('div', { class: 'sutil centro carregando', role: 'status' }, el('div', { class: 'girando' }), 'Carregando…')); }
+
+// Mostra um aviso de carregamento por cima de tudo enquanto a planilha grava.
+// Bloqueia toques até terminar, para não desfazer a ação com um segundo clique.
+async function aguardar(texto, acao) {
+  const capa = el('div', { class: 'ocupado', role: 'status' }, el('div', { class: 'girando' }), texto);
+  (dialogo.open ? dialogo : document.body).append(capa);
+  try {
+    return await acao();
+  } finally {
+    capa.remove();
+  }
+}
+function falhou(e, tentar) {
+  mostrar(el('div', { class: 'item-lista' },
+    el('strong', {}, 'Não deu certo'),
+    el('p', { class: 'sutil' }, e.message),
+    el('button', { class: 'botao primario', onclick: tentar }, 'Tentar de novo')));
+}
+
+function aviso(texto, erro) {
+  const t = el('div', { class: 'aviso' + (erro ? ' erro' : ''), role: 'status' }, texto);
+  (dialogo.open ? dialogo : document.body).append(t);
+  setTimeout(() => t.remove(), erro ? 5000 : 3000);
+}
+
+function abrirDialogo(conteudo) {
+  dialogo.returnValue = '';
+  dialogo.replaceChildren(conteudo);
+  if (!dialogo.open) dialogo.showModal();
+}
+function fecharDialogo() { if (dialogo.open) dialogo.close(); }
+function botaoCancelar(rotulo) { return el('button', { type: 'button', class: 'botao', onclick: () => dialogo.close('nao') }, rotulo || 'Cancelar'); }
+
+function confirmar(texto, rotulo) {
+  return new Promise(ok => {
+    dialogo.addEventListener('close', () => ok(dialogo.returnValue === 'sim'), { once: true });
+    abrirDialogo(el('form', { method: 'dialog' },
+      el('p', {}, texto),
+      el('div', { class: 'linha-botoes' }, botaoCancelar(), el('button', { class: 'botao primario', value: 'sim' }, rotulo || 'Confirmar'))));
+  });
+}
+
+function pedirTexto(titulo, rotulo, valor) {
+  return new Promise(ok => {
+    const input = el('input', { value: valor || '', required: true, maxlength: 60 });
+    dialogo.addEventListener('close', () => ok(dialogo.returnValue === 'sim' ? input.value.trim() : null), { once: true });
+    abrirDialogo(el('form', { method: 'dialog' },
+      el('h3', {}, titulo),
+      el('label', {}, rotulo, input),
+      el('div', { class: 'linha-botoes' }, botaoCancelar(), el('button', { class: 'botao primario', value: 'sim' }, 'Criar'))));
+    input.select();
+  });
+}
+
+// ===== Início: quem é você? =====
+
+async function iniciar() {
+  carregando();
+  try {
+    const r = await api('inicio');
+    estado.vendedores = r.vendedores;
+    estado.contagens = r.contagens;
+    const salvo = lembrado('vendedor');
+    estado.eu = estado.vendedores.find(v => v.ativo && v.nome === salvo) || null;
+    estado.eu ? telaContagens() : telaVendedores();
+  } catch (e) {
+    falhou(e, iniciar);
+  }
+}
+
+function telaVendedores() {
+  estado.eu = null;
+  lembrar('vendedor', null);
+  mostrar(
+    el('h1', {}, 'Quem é você?'),
+    estado.vendedores.filter(v => v.ativo).map(v => el('button', {
+      class: 'botao grande',
+      onclick: () => { estado.eu = v; lembrar('vendedor', v.nome); telaContagens(); },
+    }, v.nome)));
+}
+
+// ===== Lista de contagens =====
+
+async function recarregarInicio() {
+  carregando();
+  try {
+    const r = await api('inicio');
+    estado.vendedores = r.vendedores;
+    estado.contagens = r.contagens;
+    estado.eu = estado.vendedores.find(v => v.ativo && estado.eu && v.nome === estado.eu.nome) || null;
+    estado.eu ? telaContagens() : telaVendedores();
+  } catch (e) {
+    falhou(e, recarregarInicio);
+  }
+}
+
+function telaContagens() {
+  const gerente = estado.eu.gerente;
+  const abertas = estado.contagens.filter(c => c.status === 'aberta');
+  const encerradas = estado.contagens.filter(c => c.status !== 'aberta');
+  mostrar(
+    el('div', { class: 'topo-linha' },
+      el('h1', { class: 'topo-titulo' }, 'Olá, ' + estado.eu.nome),
+      el('button', { class: 'link', onclick: telaVendedores }, 'Trocar')),
+    gerente && el('div', { class: 'linha-botoes' },
+      el('button', { class: 'botao primario', onclick: novaContagem }, '+ Nova contagem'),
+      el('button', { class: 'botao', onclick: gerenciarVendedores }, 'Vendedores')),
+    el('h2', {}, 'Abertas'),
+    abertas.length ? abertas.map(itemContagem)
+      : el('p', { class: 'sutil' }, gerente ? 'Nenhuma contagem aberta. Toque em "Nova contagem".' : 'Nenhuma contagem aberta. Aguarde a gerente abrir a da semana.'),
+    encerradas.length > 0 && el('h2', {}, 'Histórico'),
+    encerradas.map(itemContagem),
+    el('div', { class: 'linha-links' },
+      el('button', { class: 'link', onclick: recarregarInicio }, '↻ Atualizar lista'),
+      gerente && el('button', { class: 'link', onclick: atualizarCatalogo }, 'Atualizar catálogo pelo site')));
+}
+
+function itemContagem(c) {
+  const aberta = c.status === 'aberta';
+  return el('div', { class: 'item-lista' },
+    el('div', { class: 'topo-linha' },
+      el('strong', { class: 'topo-titulo' }, c.nome),
+      el('span', { class: 'etiqueta' + (aberta ? '' : ' encerrada') }, aberta ? 'Aberta' : 'Encerrada')),
+    el('div', { class: 'sutil' }, 'Aberta em ' + data(c.abertaEm) + (c.encerradaEm ? ' · encerrada em ' + data(c.encerradaEm) : '')),
+    el('div', { class: 'linha-botoes' },
+      el('button', { class: 'botao' + (aberta ? ' primario' : ''), onclick: () => telaMinhaParte(c) }, aberta ? 'Contar minha parte' : 'Ver minha parte'),
+      el('button', { class: 'botao', onclick: () => telaPainel(c) }, 'Painel geral')),
+    estado.eu.gerente && el('div', { class: 'linha-links' },
+      aberta && el('button', { class: 'link perigo', onclick: () => encerrar(c) }, 'Encerrar contagem'),
+      el('button', { class: 'link perigo', onclick: () => excluir(c) }, 'Excluir contagem')));
+}
+
+// ===== Ações da gerente =====
+
+async function novaContagem() {
+  const hoje = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  const nome = await pedirTexto('Nova contagem', 'Nome da contagem', 'Contagem ' + hoje);
+  if (nome == null) return;
+  try {
+    estado.contagens = await aguardar('Abrindo contagem…', () => api('abrirContagem', nome, estado.eu.nome));
+    telaContagens();
+    aviso('Contagem aberta. Todos os vendedores já podem entrar.');
+  } catch (e) {
+    aviso(e.message, true);
+  }
+}
+
+async function encerrar(c) {
+  if (!await confirmar('Encerrar "' + c.nome + '"? Depois disso ninguém consegue mais editar esta contagem.', 'Encerrar')) return;
+  try {
+    estado.contagens = await aguardar('Encerrando contagem…', () => api('encerrarContagem', c.id, estado.eu.nome));
+    telaContagens();
+  } catch (e) {
+    aviso(e.message, true);
+  }
+}
+
+async function excluir(c) {
+  if (!await confirmar('Excluir "' + c.nome + '"? Tudo o que todos os vendedores contaram nela será apagado e não dá para desfazer. Os produtos do catálogo continuam.', 'Excluir')) return;
+  try {
+    estado.contagens = await aguardar('Excluindo contagem…', () => api('excluirContagem', c.id, estado.eu.nome));
+    telaContagens();
+    aviso('Contagem excluída.');
+  } catch (e) {
+    aviso(e.message, true);
+  }
+}
+
+async function atualizarCatalogo() {
+  if (!await confirmar('Buscar no site da TF todos os produtos cadastrados? Eles ganham os códigos de barras e passam a usar os nomes de produto e de cor do site. Leva até 1 minuto.', 'Atualizar')) return;
+  try {
+    const r = await aguardar('Atualizando o catálogo pelo site da TF… pode levar até 1 minuto.', () => api('atualizarCatalogo', estado.eu.nome));
+    abrirDialogo(el('div', {},
+      el('h3', {}, 'Catálogo atualizado'),
+      el('p', {}, r.encontrados + ' de ' + r.produtos + ' produtos encontrados no site · ' + r.eans + ' códigos de barras · ' + r.cores + ' cores.'),
+      r.naoEncontrados.length > 0 && el('div', {},
+        el('p', { class: 'sutil' }, 'Não encontrados no site (continuam como cadastro manual):'),
+        el('ul', { class: 'sutil' }, r.naoEncontrados.map(n => el('li', {}, n)))),
+      el('button', { class: 'botao primario', onclick: fecharDialogo }, 'OK')));
+  } catch (e) {
+    aviso(e.message, true);
+  }
+}
+
+function gerenciarVendedores() {
+  const lista = el('div');
+  const input = el('input', { placeholder: 'Nome do novo vendedor', maxlength: 40, autocapitalize: 'words', 'aria-label': 'Nome do novo vendedor' });
+  const desenhar = () => lista.replaceChildren(...estado.vendedores.map(v => el('div', { class: 'topo-linha linha-vendedor' },
+    el('span', { class: 'topo-titulo' }, v.nome, v.gerente && el('span', { class: 'sutil' }, ' · gerente'), !v.ativo && el('span', { class: 'sutil' }, ' · inativo')),
+    !v.gerente && el('button', { type: 'button', class: 'link', onclick: () => salvar({ nome: v.nome, ativo: !v.ativo }) }, v.ativo ? 'Desativar' : 'Reativar'))));
+  const salvar = async dados => {
+    try {
+      estado.vendedores = await aguardar('Salvando…', () => api('salvarVendedor', dados, estado.eu.nome));
+      input.value = '';
+      desenhar();
+    } catch (e) {
+      aviso(e.message, true);
+    }
+  };
+  desenhar();
+  abrirDialogo(el('form', { onsubmit: e => { e.preventDefault(); if (input.value.trim()) salvar({ nome: input.value, ativo: true }); } },
+    el('h3', {}, 'Vendedores'),
+    lista,
+    el('div', { class: 'busca' }, input, el('button', { 'aria-label': 'Adicionar vendedor' }, '+')),
+    el('button', { type: 'button', class: 'botao', style: 'margin-top:16px;text-align:center', onclick: fecharDialogo }, 'Fechar')));
+}
+
+// ===== Minha parte da contagem =====
+
+async function telaMinhaParte(c) {
+  carregando();
+  try {
+    const r = await api('minhaParte', c.id, estado.eu.nome);
+    estado.contagem = r.contagem;
+    estado.produtos = r.produtos;
+    estado.cores = r.cores;
+    estado.eans = r.eans;
+    estado.qtd = {};
+    estado.busca = '';
+    estado.ultimaLeitura = null;
+    const recente = {};
+    r.itens.forEach(it => {
+      (estado.qtd[it.produtoId] = estado.qtd[it.produtoId] || {})[it.tamanho] = it.quantidade;
+      if (!recente[it.produtoId] || it.atualizadoEm > recente[it.produtoId]) recente[it.produtoId] = it.atualizadoEm;
+    });
+    // Último produto mexido primeiro; durante a contagem a ordem não muda a cada toque.
+    estado.ordem = Object.keys(recente).filter(id => soma(estado.qtd[id]) > 0).sort((a, b) => recente[b].localeCompare(recente[a]));
+    desenharMinhaParte();
+  } catch (e) {
+    falhou(e, () => telaMinhaParte(c));
+  }
+}
+
+function editavel() { return !!estado.contagem && estado.contagem.status === 'aberta'; }
+
+function desenharMinhaParte() {
+  const c = estado.contagem;
+  estado.elStatus = el('span', { class: 'status', role: 'status' });
+  estado.elLista = el('div');
+  estado.elLeitura = el('div', { class: 'leitura', role: 'status', 'aria-live': 'polite', hidden: true });
+  estado.elBusca = el('input', {
+    type: 'search', placeholder: editavel() ? 'Buscar TF, nome, cor ou digitar EAN' : 'Buscar TF, nome ou cor',
+    autocomplete: 'off', enterkeyhint: 'search', 'aria-label': 'Buscar produto ou digitar código de barras',
+    oninput: e => { estado.busca = e.target.value; desenharLista(); },
+    onkeydown: e => { if (e.key === 'Enter') enterNaBusca(); },
+  });
+  estado.elLer = editavel() && el('button', { class: 'ler', onclick: alternarCamera }, '📷 Ler código de barras');
+  estado.elCamera = el('div', { class: 'camera', hidden: true },
+    leitor.video, el('div', { class: 'mira', 'aria-hidden': 'true' }), el('div', { class: 'dica' }, 'Mire na etiqueta · uma por vez'));
+  mostrar(
+    el('div', { class: 'topo' },
+      el('div', { class: 'topo-linha' },
+        el('button', { class: 'voltar', 'aria-label': 'Voltar para as contagens', onclick: sairDaContagem }, '←'),
+        el('div', { class: 'topo-titulo' },
+          el('strong', {}, c.nome),
+          el('span', { class: 'sutil' }, estado.eu.nome + (editavel() ? '' : ' · somente leitura'))),
+        estado.elStatus),
+      estado.elLer,
+      estado.elCamera,
+      estado.elLeitura,
+      el('div', { class: 'busca' },
+        estado.elBusca,
+        editavel() && el('button', { 'aria-label': 'Adicionar produto pelo TF', onclick: () => pedirTf('') }, '+'))),
+    estado.elLista);
+  desenharLista();
+  desenharLeitura();
+  atualizarBotaoCamera();
+  mostrarStatus();
+}
+
+// Enter na busca: números = código de barras (também serve para leitor Bluetooth); TF = busca no site.
+function enterNaBusca() {
+  const texto = estado.elBusca.value.trim();
+  if (/^\d{8,14}$/.test(texto)) {
+    estado.elBusca.value = '';
+    estado.busca = '';
+    desenharLista();
+    lerCodigo(texto);
+  } else if (/^TF[A-Z]?\d{4,}$/i.test(texto) && editavel()) {
+    abrirBuscaTf(texto);
+  }
+}
+
+function desenharLista() {
+  const termos = termosDe(estado.busca);
+  const texto = estado.busca.trim();
+  const meus = estado.ordem.map(produto).filter(p => p && bate(p, termos));
+  const partes = agruparPorTf(meus).map(grupo);
+  if (!meus.length && !termos.length) {
+    partes.push(el('p', { class: 'sutil centro' }, editavel() ? 'Toque em "Ler código de barras" e mire nas etiquetas. Também dá para buscar pelo TF ou tocar em + .' : 'Você não contou nada nesta contagem.'));
+  }
+  if (termos.length && editavel()) {
+    const outros = estado.produtos.filter(p => !estado.ordem.includes(p.id) && bate(p, termos)).slice(0, 40);
+    if (outros.length) {
+      partes.push(el('h2', {}, 'No catálogo · toque na cor para contar'));
+      agruparPorTf(outros).forEach(cores => partes.push(el('div', { class: 'item-lista' },
+        el('strong', {}, cores[0].tf + ' · ' + cores[0].nome),
+        el('div', { class: 'chips' }, cores.map(p => el('button', { class: 'chip', onclick: () => adicionarNaLista(p.id) }, bolinha(p.hex), p.corCodigo + ' · ' + p.corNome))))));
+    }
+    if (/^\d{8,14}$/.test(texto)) {
+      partes.push(el('button', { class: 'botao primario', style: 'margin-top:12px', onclick: enterNaBusca }, 'Contar o código ' + texto));
+    } else {
+      partes.push(el('button', { class: 'botao novo', onclick: () => abrirBuscaTf(texto) }, '🔎 Buscar "' + texto + '" no site da TF'));
+    }
+  } else if (termos.length && !meus.length) {
+    partes.push(el('p', { class: 'sutil centro' }, 'Nada encontrado.'));
+  }
+  estado.elLista.replaceChildren(...partes);
+}
+
+// Junta as cores do mesmo produto (mesmo TF), mantendo a ordem em que o TF aparece na lista.
+function agrupar(itens, chave) {
+  const grupos = new Map();
+  itens.forEach(i => {
+    if (!grupos.has(chave(i))) grupos.set(chave(i), []);
+    grupos.get(chave(i)).push(i);
+  });
+  return [...grupos.values()];
+}
+function agruparPorTf(produtos) {
+  return agrupar(produtos, p => p.tf).map(cores => cores.sort((a, b) => a.corCodigo.localeCompare(b.corCodigo)));
+}
+
+// Um card por produto (TF) e, dentro dele, uma linha de tamanhos para cada cor.
+function grupo(cores) {
+  const p0 = cores[0];
+  const total = cores.reduce((s, p) => s + soma(estado.qtd[p.id]), 0);
+  return el('article', { class: 'card', 'data-tf': p0.tf },
+    el('div', { class: 'card-topo' },
+      el('div', { class: 'card-nome' },
+        el('strong', {}, p0.tf + ' · ' + p0.nome),
+        el('span', { class: 'sutil' }, cores.length + (cores.length === 1 ? ' cor' : ' cores'))),
+      el('span', { class: 'total', 'aria-label': 'Total ' + total }, total),
+      editavel() && el('button', { class: 'mais-cor', 'aria-label': 'Contar outra cor de ' + p0.nome, onclick: () => abrirBuscaTf(p0.tf) }, '+ Cor')),
+    cores.map(linhaCor));
+}
+
+function linhaCor(p) {
+  const q = estado.qtd[p.id] || {};
+  const tamanhos = tamanhosDe(p, q);
+  return el('div', { class: 'cor-linha', 'data-id': p.id },
+    el('div', { class: 'cor-topo' },
+      el('span', { class: 'nome-cor' }, bolinha(p.hex), p.corCodigo + ' · ' + p.corNome),
+      el('span', { class: 'total-cor', 'aria-label': 'Total da cor ' + soma(q) }, soma(q)),
+      editavel() && el('button', { class: 'editar', 'aria-label': 'Corrigir cadastro de ' + p.corNome, onclick: () => formProduto(p) }, '✎')),
+    grade(tamanhos, tamanhos.map(t => celula(p.id, t, q[t] || 0))));
+}
+
+function celula(id, t, n) {
+  const conteudo = [el('span', { class: 'rotulo' }, t), el('span', { class: 'n' }, n)];
+  const classe = 'cel' + (n ? ' tem' : '');
+  if (!editavel()) return el('div', { class: 'tam' }, el('div', { class: classe }, conteudo));
+  return el('div', { class: 'tam' },
+    el('button', { class: classe, 'aria-label': t + ': ' + n + '. Somar 1', onclick: () => tocar(id, t, 1) }, conteudo),
+    el('button', { class: 'menos', 'aria-label': 'Tirar 1 do ' + t, disabled: !n, onclick: () => tocar(id, t, -1) }, '−'));
+}
+
+// Redesenha só o card do produto tocado (com o mesmo filtro de busca da lista).
+function atualizarCard(id) {
+  const p = produto(id);
+  const atual = p && estado.elLista && estado.elLista.querySelector('[data-tf="' + CSS.escape(p.tf) + '"]');
+  if (!atual) return;
+  const termos = termosDe(estado.busca);
+  const cores = estado.ordem.map(produto).filter(x => x && x.tf === p.tf && bate(x, termos));
+  if (cores.length) atual.replaceWith(grupo(agruparPorTf(cores)[0]));
+}
+
+function destacar(id) {
+  const linha = estado.elLista && estado.elLista.querySelector('.cor-linha[data-id="' + CSS.escape(id) + '"]');
+  if (!linha) return;
+  linha.classList.remove('destaque');
+  void linha.offsetWidth; // reinicia a animação
+  linha.classList.add('destaque');
+}
+
+function adicionarNaLista(id) {
+  if (!estado.ordem.includes(id)) estado.ordem.unshift(id);
+  estado.busca = '';
+  estado.elBusca.value = '';
+  desenharLista();
+  window.scrollTo(0, 0);
+  destacar(id);
+}
+
+function guardarProduto(p, eans) {
+  const i = estado.produtos.findIndex(x => x.id === p.id);
+  if (i >= 0) estado.produtos[i] = p; else estado.produtos.push(p);
+  (eans || []).forEach(([ean, tamanho]) => { estado.eans[ean] = [p.id, tamanho]; });
+  if (p.corCodigo && !estado.cores.some(c => c.codigo === p.corCodigo)) estado.cores.push({ codigo: p.corCodigo, nome: p.corNome, hex: p.hex || '' });
+}
+
+// ===== Leitor de código de barras =====
+
+const leitor = { ativo: false, abrindo: false, stream: null, detector: null, ultimoCodigo: '', ultimoVisto: 0, audio: null, video: null };
+leitor.video = el('video', { playsinline: true, autoplay: true, 'aria-label': 'Imagem da câmera' });
+leitor.video.muted = true;
+
+async function criarDetector() {
+  if ('BarcodeDetector' in window) {
+    try {
+      const suportados = await window.BarcodeDetector.getSupportedFormats();
+      const formatos = FORMATOS.filter(f => suportados.includes(f));
+      if (formatos.includes('ean_13')) return new window.BarcodeDetector({ formats: formatos });
+    } catch (e) { /* cai na biblioteca */ }
+  }
+  const lib = await import(LIB_LEITOR);
+  return new lib.BarcodeDetector({ formats: FORMATOS });
+}
+
+function atualizarBotaoCamera() {
+  if (!estado.elLer) return;
+  estado.elLer.className = 'ler' + (leitor.ativo ? ' ativo' : '');
+  estado.elLer.textContent = leitor.abrindo ? 'Abrindo a câmera…' : leitor.ativo ? '■ Parar a câmera' : '📷 Ler código de barras';
+  if (estado.elCamera) estado.elCamera.hidden = !leitor.ativo;
+}
+
+async function alternarCamera() {
+  if (leitor.ativo) return desligarCamera();
+  if (leitor.abrindo) return;
+  leitor.abrindo = true;
+  atualizarBotaoCamera();
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Este navegador não libera a câmera. Use o Chrome (Android) ou o Safari (iPhone).');
+    leitor.audio = leitor.audio || new (window.AudioContext || window.webkitAudioContext)();
+    leitor.audio.resume();
+    leitor.detector = leitor.detector || await criarDetector();
+    leitor.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    leitor.video.srcObject = leitor.stream;
+    await leitor.video.play();
+    leitor.ativo = true;
+    lerQuadro();
+  } catch (e) {
+    desligarCamera();
+    const msg = e.name === 'NotAllowedError' ? 'A câmera foi bloqueada. Libere o acesso à câmera para este site nas configurações do navegador.'
+      : e.name === 'NotFoundError' ? 'Nenhuma câmera encontrada neste aparelho.' : e.message;
+    mostrarLeitura(msg, 'erro');
+  } finally {
+    leitor.abrindo = false;
+    atualizarBotaoCamera();
+  }
+}
+
+function desligarCamera() {
+  leitor.ativo = false;
+  if (leitor.stream) leitor.stream.getTracks().forEach(t => t.stop());
+  leitor.stream = null;
+  leitor.video.srcObject = null;
+  atualizarBotaoCamera();
+}
+
+// Lê ~8 quadros por segundo. Com diálogo aberto (ex.: código não encontrado) a leitura pausa.
+async function lerQuadro() {
+  if (!leitor.ativo) return;
+  try {
+    if (!dialogo.open && leitor.video.readyState >= 2) {
+      const codigos = await leitor.detector.detect(leitor.video);
+      if (codigos.length === 1) receberCodigoDaCamera(codigos[0].rawValue, Date.now());
+      else if (codigos.length > 1) mostrarLeitura('Mais de uma etiqueta na câmera. Mire em uma só.', 'erro');
+    }
+  } catch (e) { /* quadro ruim: tenta o próximo */ }
+  setTimeout(lerQuadro, 120);
+}
+
+// Proteção contra contar duas vezes: o mesmo código só conta de novo depois de sumir da câmera.
+function receberCodigoDaCamera(codigo, agora) {
+  const mesmo = codigo === leitor.ultimoCodigo && agora - leitor.ultimoVisto < PAUSA_MESMO_CODIGO;
+  leitor.ultimoVisto = agora;
+  if (mesmo) return;
+  leitor.ultimoCodigo = codigo;
+  lerCodigo(codigo);
+}
+
+function sinal(tipo) {
+  try { if (navigator.vibrate) navigator.vibrate(tipo === 'ok' ? 40 : [90, 60, 90]); } catch (e) {}
+  try {
+    const ctx = leitor.audio;
+    if (!ctx) return;
+    const osc = ctx.createOscillator(), volume = ctx.createGain();
+    osc.frequency.value = tipo === 'ok' ? 1250 : 320;
+    volume.gain.value = 0.08;
+    osc.connect(volume);
+    volume.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + (tipo === 'ok' ? 0.08 : 0.3));
+  } catch (e) {}
+}
+
+function mostrarLeitura(texto, tipo, desfazer) {
+  estado.ultimaLeitura = { texto, tipo, desfazer };
+  desenharLeitura();
+}
+
+function desenharLeitura() {
+  const caixa = estado.elLeitura, l = estado.ultimaLeitura;
+  if (!caixa) return;
+  caixa.hidden = !l;
+  if (!l) return;
+  caixa.className = 'leitura ' + (l.tipo || '');
+  caixa.replaceChildren(...[
+    el('span', { class: 'leitura-texto' }, l.texto),
+    l.desfazer && el('button', { class: 'link', onclick: () => { const d = l.desfazer; l.desfazer = null; d(); mostrarLeitura('Leitura desfeita.', ''); } }, 'Desfazer'),
+  ].filter(Boolean));
+}
+
+// Um código lido (câmera, digitado ou leitor Bluetooth).
+async function lerCodigo(codigo) {
+  const ean = String(codigo || '').replace(/\D/g, '');
+  if (!editavel()) return;
+  if (ean.length < 8) return mostrarLeitura('Código ' + codigo + ' não é um código de barras de produto.', 'erro');
+  const local = estado.eans[ean];
+  if (local && produto(local[0])) return contarLeitura(local[0], local[1]);
+  if (estado.buscandoEan[ean]) return;
+  estado.buscandoEan[ean] = true;
+  mostrarLeitura('Buscando ' + ean + ' no site da TF…', '');
+  try {
+    const r = await api('buscarEan', ean, estado.eu.nome);
+    if (r.naoEncontrado) return codigoNaoEncontrado(ean);
+    guardarProduto(r.produto, r.eans);
+    contarLeitura(r.produto.id, r.tamanho);
+  } catch (e) {
+    sinal('erro');
+    mostrarLeitura('Não consegui buscar ' + ean + ': ' + e.message, 'erro');
+  } finally {
+    delete estado.buscandoEan[ean];
+  }
+}
+
+function contarLeitura(id, tamanho) {
+  const p = produto(id);
+  if (!estado.ordem.includes(id)) {
+    estado.ordem.unshift(id);
+    desenharLista();
+  }
+  tocar(id, tamanho, 1);
+  destacar(id);
+  sinal('ok');
+  const n = (estado.qtd[id] || {})[tamanho] || 0;
+  mostrarLeitura(p.tf + ' · ' + p.corNome + ' · ' + tamanho + ' → ' + n, 'ok', () => tocar(id, tamanho, -1));
+}
+
+// O site não conhece o código: o vendedor diz uma vez de qual produto e tamanho ele é.
+function codigoNaoEncontrado(ean) {
+  sinal('erro');
+  mostrarLeitura('Código ' + ean + ' não encontrado no site da TF.', 'erro');
+  const lista = el('div');
+  const busca = el('input', { class: 'campo-busca', type: 'search', placeholder: 'Buscar no catálogo: TF, nome ou cor', 'aria-label': 'Buscar produto no catálogo' });
+  const desenhar = () => {
+    const termos = termosDe(busca.value);
+    const achados = termos.length ? estado.produtos.filter(p => bate(p, termos)).slice(0, 12) : [];
+    lista.replaceChildren(...achados.map(p => el('button', { type: 'button', class: 'botao', onclick: () => escolherTamanhoDoCodigo(ean, p) },
+      bolinha(p.hex), p.tf + ' · ' + p.corNome, el('span', { class: 'sutil' }, ' ' + p.nome))));
+  };
+  busca.addEventListener('input', desenhar);
+  abrirDialogo(el('div', {},
+    el('h3', {}, 'Código não encontrado'),
+    el('p', { class: 'sutil' }, 'O código ' + ean + ' não está no site da TF. Diga uma vez de qual produto ele é; nas próximas leituras ele já vai ser reconhecido.'),
+    busca, lista,
+    el('button', { type: 'button', class: 'botao novo', onclick: () => formProduto(null, '', { ean }) }, '+ É um produto novo: cadastrar'),
+    el('button', { type: 'button', class: 'botao', style: 'margin-top:8px;text-align:center', onclick: fecharDialogo }, 'Agora não')));
+  busca.focus();
+}
+
+function escolherTamanhoDoCodigo(ean, p) {
+  abrirDialogo(el('div', {},
+    el('h3', {}, p.tf + ' · ' + p.corNome),
+    el('p', {}, 'Qual tamanho é o código ' + ean + '?'),
+    el('div', { class: 'chips' }, p.tamanhos.map(t => el('button', { type: 'button', class: 'chip', onclick: () => vincularCodigo(ean, p.id, t) }, t))),
+    el('button', { type: 'button', class: 'botao', style: 'margin-top:16px;text-align:center', onclick: () => codigoNaoEncontrado(ean) }, 'Voltar')));
+}
+
+async function vincularCodigo(ean, produtoId, tamanho) {
+  try {
+    const r = await aguardar('Salvando o código…', () => api('vincularEan', ean, produtoId, tamanho, estado.eu.nome));
+    guardarProduto(r.produto, r.eans);
+    fecharDialogo();
+    contarLeitura(r.produto.id, r.tamanho);
+  } catch (e) {
+    aviso(e.message, true);
+  }
+}
+
+// ===== Produtos: busca no site pelo TF e cadastro manual =====
+
+async function pedirTf(inicial) {
+  const tf = await new Promise(ok => {
+    const input = el('input', { value: inicial || '', required: true, maxlength: 20, autocapitalize: 'characters', placeholder: 'Ex.: TF041024' });
+    dialogo.addEventListener('close', () => ok(dialogo.returnValue === 'sim' ? input.value.trim() : null), { once: true });
+    abrirDialogo(el('form', { method: 'dialog' },
+      el('h3', {}, 'Adicionar produto'),
+      el('label', {}, 'TF do produto', input),
+      el('p', { class: 'sutil' }, 'Busca as cores no site da TF. Para produtos com etiqueta, é mais rápido ler o código de barras.'),
+      el('div', { class: 'linha-botoes' }, botaoCancelar(), el('button', { class: 'botao primario', value: 'sim' }, 'Buscar no site'))));
+    input.focus();
+  });
+  if (tf) abrirBuscaTf(tf);
+}
+
+// Mostra as cores do TF no site (e as cadastradas à mão); tocar numa cor coloca na contagem.
+async function abrirBuscaTf(texto) {
+  const tf = String(texto || '').trim().toUpperCase();
+  const corpo = el('div', { class: 'sutil carregando centro', role: 'status' }, el('div', { class: 'girando' }), 'Buscando ' + tf + ' no site da TF…');
+  const caixa = el('div', {}, el('h3', {}, tf), corpo);
+  abrirDialogo(caixa);
+  let doSite = [], erro = '';
+  try {
+    doSite = await api('buscarTf', tf, estado.eu.nome);
+  } catch (e) {
+    erro = e.message;
+  }
+  if (!dialogo.open || !caixa.isConnected) return;
+  const manuais = estado.produtos.filter(p => p.tf === tf && !doSite.some(c => c.corCodigo === p.corCodigo))
+    .map(p => ({ tf, corCodigo: p.corCodigo, corNome: p.corNome, hex: p.hex, nome: p.nome, produtoId: p.id }));
+  const cores = doSite.concat(manuais);
+  corpo.className = '';
+  corpo.replaceChildren(...[
+    cores.length ? el('p', {}, el('strong', {}, cores[0].nome)) : el('p', { class: 'sutil' }, erro || 'Nenhuma cor desse TF foi encontrada no site.'),
+    cores.length > 0 && el('p', { class: 'sutil' }, 'Toque na cor para contar:'),
+    cores.length > 0 && el('div', { class: 'chips' }, cores.map(c => el('button', { type: 'button', class: 'chip', onclick: () => escolherCor(c) },
+      bolinha(c.hex), c.corCodigo + ' · ' + c.corNome, c.produtoId && estado.ordem.includes(c.produtoId) ? ' ✓' : ''))),
+    el('button', { type: 'button', class: 'botao novo', onclick: () => formProduto(null, tf) }, 'A cor não está aqui? Cadastrar manualmente'),
+    el('button', { type: 'button', class: 'botao', style: 'margin-top:8px;text-align:center', onclick: fecharDialogo }, 'Fechar'),
+  ].filter(Boolean));
+}
+
+async function escolherCor(c) {
+  if (c.produtoId && produto(c.produtoId)) {
+    fecharDialogo();
+    adicionarNaLista(c.produtoId);
+    return;
+  }
+  try {
+    const r = await aguardar('Trazendo do site da TF…', () => api('importarDoSite', c.tf, c.corCodigo, estado.eu.nome));
+    guardarProduto(r.produto, r.eans);
+    fecharDialogo();
+    adicionarNaLista(r.produto.id);
+  } catch (e) {
+    aviso(e.message, true);
+  }
+}
+
+// Cadastro manual (produto fora do site) ou correção. opcoes.ean: código lido que vai ser ligado ao produto novo.
+function formProduto(p, texto, opcoes) {
+  opcoes = opcoes || {};
+  const editando = !!p;
+  texto = String(texto || '').trim().toUpperCase();
+  const mesmoTf = estado.produtos.find(x => x.tf === (p ? p.tf : texto));
+  const campo = (nome, valor, extra) => el('input', Object.assign({ name: nome, value: valor || '', required: true, maxlength: 60, autocomplete: 'off' }, extra));
+  const tf = campo('tf', p ? p.tf : texto, { autocapitalize: 'characters', placeholder: 'Ex.: TF041024' });
+  const nome = campo('nome', p ? p.nome : (mesmoTf ? mesmoTf.nome : ''), { autocapitalize: 'words' });
+  const corCodigo = campo('corCodigo', p ? p.corCodigo : '', { autocapitalize: 'characters', list: 'lista-cores', placeholder: 'Ex.: 0004' });
+  const corNome = campo('corNome', '', { autocapitalize: 'words', required: false });
+  const rotuloCorNome = el('label', { hidden: true }, 'Nome da cor nova', corNome);
+  const infoCor = el('p', { class: 'sutil', style: 'margin:-6px 0 12px' });
+  document.getElementById('lista-cores').replaceChildren(...estado.cores.map(c => el('option', { value: c.codigo }, c.nome)));
+
+  // Cor: código cadastrado usa a cor cadastrada; código novo pede o nome e vira uma cor nova.
+  const conferirCor = () => {
+    const codigo = corCodigo.value.trim().toUpperCase();
+    const cor = estado.cores.find(c => c.codigo === codigo);
+    infoCor.replaceChildren(...(cor ? [bolinha(cor.hex), '✓ ' + cor.nome] : codigo ? ['Cor nova: informe o nome abaixo.'] : ['Escolha uma cor cadastrada ou digite o código de uma nova.']));
+    rotuloCorNome.hidden = !!cor || !codigo;
+    corNome.required = !cor && !!codigo;
+  };
+  corCodigo.addEventListener('input', conferirCor);
+  conferirCor();
+  tf.addEventListener('change', () => {
+    const igual = estado.produtos.find(x => x.tf === tf.value.trim().toUpperCase());
+    if (igual && !nome.value.trim()) nome.value = igual.nome;
+  });
+
+  // Tamanhos: os comuns como botões liga/desliga e um campo para outros (ex.: 33/36).
+  const marcados = new Set(p ? p.tamanhos : (mesmoTf ? mesmoTf.tamanhos : ['PP', 'P', 'M', 'G', 'GG']));
+  const opcoesTam = ordenarTamanhos(TAMANHOS_COMUNS.concat([...marcados]));
+  const chips = el('div', { class: 'chips', role: 'group', 'aria-label': 'Tamanhos' }, opcoesTam.map(t => el('button', {
+    type: 'button', class: 'chip', 'aria-pressed': String(marcados.has(t)),
+    onclick: e => { marcados.has(t) ? marcados.delete(t) : marcados.add(t); e.currentTarget.setAttribute('aria-pressed', String(marcados.has(t))); },
+  }, t)));
+  const outros = campo('outros', '', { required: false, placeholder: 'Ex.: 33/36, 37/40' });
+
+  const erro = el('p', { class: 'erro', role: 'alert' });
+  const salvarBtn = el('button', { class: 'botao primario' }, editando ? 'Salvar correção' : 'Cadastrar');
+  const enviarForm = async e => {
+    e.preventDefault();
+    erro.textContent = '';
+    const tamanhos = [...marcados].concat(outros.value.split(',')).map(t => t.trim().toUpperCase()).filter(Boolean);
+    if (!tamanhos.length) { erro.textContent = 'Marque pelo menos um tamanho.'; return; }
+    salvarBtn.disabled = true;
+    try {
+      const dados = { id: p ? p.id : '', tf: tf.value, nome: nome.value, corCodigo: corCodigo.value, corNome: corNome.value, tamanhos };
+      const r = await aguardar('Salvando produto…', () => api('salvarProduto', dados, estado.eu.nome));
+      if (r.existente && editando) {
+        erro.textContent = 'Já existe outro produto com esse TF e cor: ' + r.existente.nome + ' (' + r.existente.corNome + ').';
+        salvarBtn.disabled = false;
+        return;
+      }
+      const salvo = r.existente || r.produto;
+      guardarProduto(salvo);
+      if (opcoes.ean) return escolherTamanhoDoCodigo(opcoes.ean, salvo);
+      fecharDialogo();
+      if (editando) {
+        desenharLista();
+      } else {
+        adicionarNaLista(salvo.id);
+        if (r.existente) aviso('Esse produto já estava cadastrado. Ele foi colocado na sua contagem.');
+      }
+    } catch (err) {
+      erro.textContent = err.message;
+      salvarBtn.disabled = false;
+    }
+  };
+
+  abrirDialogo(el('form', { onsubmit: enviarForm },
+    el('h3', {}, editando ? 'Corrigir produto' : 'Cadastro manual'),
+    !editando && el('p', { class: 'sutil' }, opcoes.ean ? 'Produto do código ' + opcoes.ean + '.' : 'Use só para produtos que não estão no site da TF.'),
+    el('label', {}, 'TF', tf),
+    el('label', {}, 'Nome do produto', nome),
+    el('label', {}, 'Cor (código)', corCodigo),
+    infoCor,
+    rotuloCorNome,
+    el('div', { style: 'margin-bottom:12px' }, el('span', { style: 'font-size:14px;font-weight:600' }, 'Tamanhos'), chips),
+    el('label', {}, 'Outros tamanhos (separe por vírgula)', outros),
+    erro,
+    el('div', { class: 'linha-botoes' }, botaoCancelar(), salvarBtn)));
+  (tf.value ? (nome.value ? corCodigo : nome) : tf).focus();
+}
+
+// ===== Salvamento: toque muda na hora, servidor recebe em lote =====
+
+function tocar(id, tamanho, delta) {
+  if (!editavel()) return;
+  const q = estado.qtd[id] = estado.qtd[id] || {};
+  if ((q[tamanho] || 0) + delta < 0) return;
+  q[tamanho] = (q[tamanho] || 0) + delta;
+  const chave = id + '|' + tamanho;
+  estado.pendentes[chave] = (estado.pendentes[chave] || 0) + delta;
+  if (!estado.pendentes[chave]) delete estado.pendentes[chave];
+  atualizarCard(id);
+  agendarEnvio(700);
+}
+
+function temPendente() { return Object.keys(estado.pendentes).length > 0 || estado.enviando; }
+
+function agendarEnvio(ms) {
+  clearTimeout(estado.timer);
+  estado.timer = setTimeout(enviar, ms);
+  mostrarStatus();
+}
+
+async function enviar() {
+  if (estado.enviando || !estado.contagem) return;
+  const lote = estado.pendentes;
+  estado.pendentes = {};
+  const deltas = Object.keys(lote).map(k => ({ produtoId: k.split('|')[0], tamanho: k.split('|')[1], delta: lote[k] }));
+  if (!deltas.length) return mostrarStatus();
+  estado.enviando = true;
+  mostrarStatus();
+  try {
+    const quantidades = await api('registrarDeltas', estado.contagem.id, estado.eu.nome, deltas);
+    estado.enviando = false;
+    estado.falhas = 0;
+    // O servidor manda o valor oficial; somamos o que foi tocado enquanto o lote viajava.
+    Object.keys(quantidades).forEach(k => {
+      const [id, t] = k.split('|');
+      (estado.qtd[id] = estado.qtd[id] || {})[t] = quantidades[k] + (estado.pendentes[k] || 0);
+      atualizarCard(id);
+    });
+    if (temPendente()) agendarEnvio(300);
+  } catch (e) {
+    estado.enviando = false;
+    if (ERRO_PERMANENTE.test(e.message)) {
+      estado.pendentes = {};
+      estado.falhas = 0;
+      aviso(/Contagem não encontrada/.test(e.message) ? 'Esta contagem foi excluída pela gerente.' : e.message, true);
+      desligarCamera();
+      if (/Contagem não encontrada/.test(e.message)) {
+        estado.contagem = null;
+        estado.elStatus = null;
+        recarregarInicio();
+      } else {
+        telaMinhaParte(estado.contagem);
+      }
+      return;
+    }
+    // Sem conexão: devolve o lote para a fila e tenta de novo, esperando cada vez mais.
+    Object.keys(lote).forEach(k => { estado.pendentes[k] = (estado.pendentes[k] || 0) + lote[k]; });
+    estado.falhas++;
+    agendarEnvio(Math.min(30000, 1000 * Math.pow(2, estado.falhas)));
+  }
+  mostrarStatus();
+}
+
+function mostrarStatus() {
+  const s = estado.elStatus;
+  if (!s) return;
+  const erro = estado.falhas > 0;
+  s.className = 'status' + (erro ? ' erro' : '');
+  s.textContent = !editavel() ? '' : erro ? 'Sem conexão · tentando' : temPendente() ? 'Salvando…' : 'Salvo ✓';
+}
+
+async function sairDaContagem() {
+  desligarCamera();
+  if (temPendente()) {
+    clearTimeout(estado.timer);
+    await aguardar('Salvando contagem…', async () => {
+      while (estado.enviando) await esperar(150);
+      await enviar();
+      while (estado.enviando) await esperar(150);
+    });
+    if (temPendente() && !await confirmar('Alguns toques ainda não foram salvos (sem conexão). Sair e perder esses toques?', 'Sair mesmo assim')) return;
+  }
+  clearTimeout(estado.timer);
+  estado.pendentes = {};
+  estado.falhas = 0;
+  estado.contagem = null;
+  estado.elStatus = null;
+  estado.elLer = null;
+  recarregarInicio();
+}
+
+window.addEventListener('beforeunload', e => {
+  if (temPendente()) { e.preventDefault(); e.returnValue = ''; }
+});
+// Câmera desligada quando o app sai da tela (economiza bateria e libera a câmera).
+document.addEventListener('visibilitychange', () => { if (document.hidden) desligarCamera(); });
+
+// ===== Painel geral (todos os vendedores somados) =====
+
+async function telaPainel(c) {
+  carregando();
+  try {
+    const r = await api('consolidado', c.id);
+    desenharPainel(r.contagem, r.linhas);
+  } catch (e) {
+    falhou(e, () => telaPainel(c));
+  }
+}
+
+function desenharPainel(c, linhas) {
+  const totais = {};
+  let geral = 0;
+  linhas.forEach(l => {
+    Object.keys(l.tamanhos).forEach(t => { totais[t] = (totais[t] || 0) + l.tamanhos[t]; });
+    geral += l.total;
+  });
+  const tamanhosGerais = ordenarTamanhos(Object.keys(totais));
+  const lista = el('div');
+  const filtrar = busca => {
+    const termos = termosDe(busca);
+    const visiveis = linhas.filter(l => bate(l.produto, termos));
+    lista.replaceChildren(...(visiveis.length ? agrupar(visiveis, l => l.produto.tf).map(grupoPainel)
+      : [el('p', { class: 'sutil centro' }, linhas.length ? 'Nada encontrado.' : 'Ninguém contou nada ainda.')]));
+  };
+  const nProdutos = agrupar(linhas, l => l.produto.tf).length;
+  mostrar(
+    el('div', { class: 'topo' },
+      el('div', { class: 'topo-linha' },
+        el('button', { class: 'voltar', 'aria-label': 'Voltar para as contagens', onclick: recarregarInicio }, '←'),
+        el('div', { class: 'topo-titulo' },
+          el('strong', {}, c.nome),
+          el('span', { class: 'sutil' }, 'Painel geral · ' + nProdutos + (nProdutos === 1 ? ' produto' : ' produtos') + ' · ' + linhas.length + (linhas.length === 1 ? ' cor' : ' cores'))),
+        el('button', { class: 'link', onclick: () => telaPainel(c) }, '↻ Atualizar')),
+      el('div', { class: 'busca' },
+        el('input', { type: 'search', placeholder: 'Filtrar por TF, nome ou cor', 'aria-label': 'Filtrar produtos', oninput: e => filtrar(e.target.value) }))),
+    el('div', { class: 'card resumo' },
+      el('div', { class: 'card-topo' }, el('strong', { class: 'card-nome' }, 'Total geral'), el('span', { class: 'total' }, geral)),
+      tamanhosGerais.length > 0 && grade(tamanhosGerais, tamanhosGerais.map(t => celulaFixa(t, totais[t] || 0)))),
+    lista);
+  filtrar('');
+}
+
+function celulaFixa(t, n) {
+  return el('div', { class: 'cel' + (n ? ' tem' : '') }, el('span', { class: 'rotulo' }, t), el('span', { class: 'n' }, n));
+}
+
+// Um card por produto (TF) com as cores juntas; tocar numa cor mostra quem contou quanto.
+function grupoPainel(linhas) {
+  const p0 = linhas[0].produto;
+  const total = linhas.reduce((s, l) => s + l.total, 0);
+  return el('article', { class: 'card' },
+    el('div', { class: 'card-topo' },
+      el('div', { class: 'card-nome' },
+        el('strong', {}, p0.tf + ' · ' + p0.nome),
+        el('span', { class: 'sutil' }, linhas.length + (linhas.length === 1 ? ' cor' : ' cores'))),
+      el('span', { class: 'total' }, total)),
+    linhas.map(linhaPainel));
+}
+
+function linhaPainel(l) {
+  const p = l.produto;
+  const tamanhos = tamanhosDe(p, l.tamanhos);
+  const nomes = Object.keys(l.vendedores).sort();
+  const detalhe = el('div', { class: 'detalhe', hidden: true },
+    nomes.map(v => el('div', {},
+      el('div', { class: 'sutil' }, v + ' · ' + soma(l.vendedores[v])),
+      grade(tamanhos, tamanhos.map(t => celulaFixa(t, l.vendedores[v][t] || 0)), 'pequenos'))));
+  const cabecalho = el('button', { class: 'cor-topo botao-limpo', 'aria-expanded': 'false' },
+    el('span', { class: 'nome-cor' }, bolinha(p.hex), p.corCodigo + ' · ' + p.corNome),
+    el('span', { class: 'sutil' }, (nomes.length === 1 ? nomes[0] : nomes.length + ' vendedores') + ' ▾'),
+    el('span', { class: 'total-cor' }, l.total));
+  cabecalho.addEventListener('click', () => {
+    detalhe.hidden = !detalhe.hidden;
+    cabecalho.setAttribute('aria-expanded', String(!detalhe.hidden));
+  });
+  return el('div', { class: 'cor-linha' }, cabecalho, grade(tamanhos, tamanhos.map(t => celulaFixa(t, l.tamanhos[t] || 0))), detalhe);
+}
+
+iniciar();
+</script>
+</body>
+</html>

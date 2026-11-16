@@ -37,6 +37,7 @@
   .item-lista { background: var(--cartao); border: 1px solid var(--linha); border-radius: var(--raio); padding: 14px; margin-bottom: 10px; }
   .etiqueta { flex: none; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; background: var(--marca-claro); color: var(--marca); }
   .etiqueta.encerrada { background: #e8eaee; color: var(--suave); }
+  .loja { display: inline-block; margin: 0 0 4px; padding: 4px 12px; border-radius: 999px; background: var(--marca); color: #fff; font-size: 14px; font-weight: 700; }
 
   /* Cabeçalho fixo das telas de contagem e painel */
   .topo { position: sticky; top: 0; z-index: 5; background: var(--fundo); margin: -16px -16px 12px; padding: 8px 16px 12px; border-bottom: 1px solid var(--linha); }
@@ -145,6 +146,9 @@ const FORMATOS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'];
 const TAMANHOS_COMUNS = ['PP', 'P', 'M', 'G', 'GG', '3G', 'UNICO'];
 const ORDEM_TAMANHOS = ['PP', 'P', 'M', 'G', 'GG', '3G', '4G', 'UNICO'];
 const PAUSA_MESMO_CODIGO = 1200; // ms que um código precisa sumir da câmera para contar de novo
+// Loja do link: endereço sem ?loja= é a Limeira Rua (o de sempre); a Limeira Shopping usa ?loja=limeira-shopping.
+const LOJA = (new URLSearchParams(location.search).get('loja') || '').trim();
+const CHAVE_VENDEDOR = LOJA ? 'vendedor:' + LOJA : 'vendedor';
 // Erros do servidor que não adianta repetir (o resto é tratado como falha de conexão).
 const ERRO_PERMANENTE = /encerrada|não encontrad|inativo|inválido|Só a gerente/i;
 
@@ -177,7 +181,7 @@ function el(tag, props, ...filhos) {
 async function api(acao, ...args) {
   let resposta;
   try {
-    const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao, args }) });
+    const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao, args, loja: LOJA || undefined }) });
     resposta = await r.json();
   } catch (e) {
     throw new Error('Sem conexão com a planilha. Confira a internet e tente de novo.');
@@ -279,13 +283,27 @@ function pedirTexto(titulo, rotulo, valor) {
 
 // ===== Início: quem é você? =====
 
+// Cada loja tem a sua cor no app inteiro e o nome no topo, para ninguém contar na loja errada sem perceber.
+function aplicarLoja(loja) {
+  estado.loja = loja;
+  const raiz = document.documentElement.style;
+  if (loja.cor) {
+    raiz.setProperty('--marca', loja.cor);
+    raiz.setProperty('--marca-claro', 'color-mix(in srgb, ' + loja.cor + ' 14%, white)');
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', loja.cor);
+  }
+  document.title = 'Contagem · ' + loja.nome;
+}
+function etiquetaLoja() { return el('span', { class: 'loja' }, '📍 ' + estado.loja.nome); }
+
 async function iniciar() {
   carregando();
   try {
     const r = await api('inicio');
+    aplicarLoja(r.loja);
     estado.vendedores = r.vendedores;
     estado.contagens = r.contagens;
-    const salvo = lembrado('vendedor');
+    const salvo = lembrado(CHAVE_VENDEDOR);
     estado.eu = estado.vendedores.find(v => v.ativo && v.nome === salvo) || null;
     estado.eu ? telaContagens() : telaVendedores();
   } catch (e) {
@@ -295,12 +313,13 @@ async function iniciar() {
 
 function telaVendedores() {
   estado.eu = null;
-  lembrar('vendedor', null);
+  lembrar(CHAVE_VENDEDOR, null);
   mostrar(
+    etiquetaLoja(),
     el('h1', {}, 'Quem é você?'),
     estado.vendedores.filter(v => v.ativo).map(v => el('button', {
       class: 'botao grande',
-      onclick: () => { estado.eu = v; lembrar('vendedor', v.nome); telaContagens(); },
+      onclick: () => { estado.eu = v; lembrar(CHAVE_VENDEDOR, v.nome); telaContagens(); },
     }, v.nome)));
 }
 
@@ -310,6 +329,7 @@ async function recarregarInicio() {
   carregando();
   try {
     const r = await api('inicio');
+    aplicarLoja(r.loja);
     estado.vendedores = r.vendedores;
     estado.contagens = r.contagens;
     estado.eu = estado.vendedores.find(v => v.ativo && estado.eu && v.nome === estado.eu.nome) || null;
@@ -324,6 +344,7 @@ function telaContagens() {
   const abertas = estado.contagens.filter(c => c.status === 'aberta');
   const encerradas = estado.contagens.filter(c => c.status !== 'aberta');
   mostrar(
+    etiquetaLoja(),
     el('div', { class: 'topo-linha' },
       el('h1', { class: 'topo-titulo' }, 'Olá, ' + estado.eu.nome),
       el('button', { class: 'link', onclick: telaVendedores }, 'Trocar')),
@@ -478,7 +499,7 @@ function desenharMinhaParte() {
         el('button', { class: 'voltar', 'aria-label': 'Voltar para as contagens', onclick: sairDaContagem }, '←'),
         el('div', { class: 'topo-titulo' },
           el('strong', {}, c.nome),
-          el('span', { class: 'sutil' }, estado.eu.nome + (editavel() ? '' : ' · somente leitura'))),
+          el('span', { class: 'sutil' }, estado.eu.nome + ' · ' + estado.loja.nome + (editavel() ? '' : ' · somente leitura'))),
         estado.elStatus),
       estado.elLer,
       estado.elCamera,
@@ -1170,7 +1191,7 @@ function desenharPainel(c, linhas) {
         el('button', { class: 'voltar', 'aria-label': 'Voltar para as contagens', onclick: recarregarInicio }, '←'),
         el('div', { class: 'topo-titulo' },
           el('strong', {}, c.nome),
-          el('span', { class: 'sutil' }, 'Painel geral · ' + nProdutos + (nProdutos === 1 ? ' produto' : ' produtos') + ' · ' + linhas.length + (linhas.length === 1 ? ' cor' : ' cores'))),
+          el('span', { class: 'sutil' }, estado.loja.nome + ' · ' + nProdutos + (nProdutos === 1 ? ' produto' : ' produtos') + ' · ' + linhas.length + (linhas.length === 1 ? ' cor' : ' cores'))),
         el('button', { class: 'link', onclick: () => telaPainel(c) }, '↻ Atualizar')),
       el('div', { class: 'busca' },
         el('input', { type: 'search', placeholder: 'Filtrar por TF, nome ou cor', 'aria-label': 'Filtrar produtos', oninput: e => filtrar(e.target.value) }))),
